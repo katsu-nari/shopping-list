@@ -29,8 +29,33 @@
       font-size: 1.5rem;
       font-weight: 700;
       color: #1a1a1a;
-      margin-bottom: 20px;
+      margin-bottom: 4px;
       text-align: center;
+    }
+
+    .status {
+      text-align: center;
+      font-size: 0.75rem;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ccc;
+      flex-shrink: 0;
+    }
+
+    .status-dot.connected { background: #48bb78; }
+    .status-dot.disconnected { background: #e53e3e; }
+
+    .status-text {
+      color: #999;
     }
 
     .input-row {
@@ -168,6 +193,10 @@
 <body>
   <div class="container">
     <h1>🛒 植松家の買い物リスト</h1>
+    <div class="status">
+      <span class="status-dot" id="statusDot"></span>
+      <span class="status-text" id="statusText">接続中...</span>
+    </div>
 
     <div class="input-row">
       <input type="text" id="itemInput" placeholder="アイテムを入力..." maxlength="100">
@@ -182,20 +211,46 @@
   </div>
 
   <script>
-    let items = JSON.parse(localStorage.getItem('shoppingList') || '[]');
+    let items = [];
+    let ws;
 
-    function save() {
-      localStorage.setItem('shoppingList', JSON.stringify(items));
+    function connect() {
+      const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${protocol}://${location.host}`);
+
+      ws.addEventListener('open', () => {
+        document.getElementById('statusDot').className = 'status-dot connected';
+        document.getElementById('statusText').textContent = '接続済み';
+      });
+
+      ws.addEventListener('close', () => {
+        document.getElementById('statusDot').className = 'status-dot disconnected';
+        document.getElementById('statusText').textContent = '切断 — 再接続中...';
+        setTimeout(connect, 3000);
+      });
+
+      ws.addEventListener('message', (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'init' || msg.type === 'update') {
+          items = msg.items;
+          render();
+        }
+      });
+    }
+
+    function send() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'update', items }));
+      }
     }
 
     function render() {
       const list = document.getElementById('list');
       const empty = document.getElementById('empty');
       const summary = document.getElementById('summary');
+      const clearBtn = document.getElementById('clearBtn');
 
       list.innerHTML = '';
-
-      const clearBtn = document.getElementById('clearBtn');
 
       if (items.length === 0) {
         empty.style.display = 'block';
@@ -245,7 +300,7 @@
       const name = input.value.trim();
       if (!name) return;
       items.push({ name, checked: false });
-      save();
+      send();
       render();
       input.value = '';
       input.focus();
@@ -253,20 +308,20 @@
 
     function toggleItem(index) {
       items[index].checked = !items[index].checked;
-      save();
+      send();
       render();
     }
 
     function deleteItem(index) {
       items.splice(index, 1);
-      save();
+      send();
       render();
     }
 
     function clearAll() {
       if (!confirm('リストを全て削除しますか？')) return;
       items = [];
-      save();
+      send();
       render();
     }
 
@@ -274,7 +329,7 @@
       if (e.key === 'Enter') addItem();
     });
 
-    render();
+    connect();
   </script>
 </body>
 </html>
