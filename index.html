@@ -170,7 +170,8 @@
     <h1>🛒 植松家の買い物リスト</h1>
 
     <div class="input-row">
-      <input type="text" id="itemInput" placeholder="アイテムを入力..." maxlength="100">
+      <input type="text" id="itemInput" placeholder="アイテムを入力..." maxlength="100" list="history">
+      <datalist id="history"></datalist>
       <button onclick="addItem()">追加</button>
     </div>
 
@@ -183,6 +184,26 @@
 
   <script>
     let items = JSON.parse(localStorage.getItem('shoppingList') || '[]');
+    let history = JSON.parse(localStorage.getItem('shoppingHistory') || '[]');
+
+    function saveHistory(name) {
+      if (!history.includes(name)) {
+        history.unshift(name);
+        if (history.length > 100) history.pop();
+        localStorage.setItem('shoppingHistory', JSON.stringify(history));
+      }
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const datalist = document.getElementById('history');
+      datalist.innerHTML = '';
+      history.forEach(name => {
+        const option = document.createElement('option');
+        option.value = name;
+        datalist.appendChild(option);
+      });
+    }
 
     function save() {
       localStorage.setItem('shoppingList', JSON.stringify(items));
@@ -246,6 +267,7 @@
       if (!name) return;
       items.push({ name, checked: false });
       save();
+      saveHistory(name);
       render();
       input.value = '';
       input.focus();
@@ -274,6 +296,7 @@
       if (e.key === 'Enter') addItem();
     });
 
+    renderHistory();
     render();
   </script>
 </body>
