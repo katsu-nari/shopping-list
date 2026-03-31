@@ -54,9 +54,7 @@
     .status-dot.connected { background: #48bb78; }
     .status-dot.disconnected { background: #e53e3e; }
 
-    .status-text {
-      color: #999;
-    }
+    .status-text { color: #999; }
 
     .input-row {
       display: flex;
@@ -75,9 +73,7 @@
       transition: border-color 0.2s;
     }
 
-    .input-row input:focus {
-      border-color: #4c8bf5;
-    }
+    .input-row input:focus { border-color: #4c8bf5; }
 
     .input-row button {
       padding: 12px 18px;
@@ -92,9 +88,7 @@
       transition: background 0.2s;
     }
 
-    .input-row button:active {
-      background: #3570d4;
-    }
+    .input-row button:active { background: #3570d4; }
 
     .summary {
       font-size: 0.85rem;
@@ -116,14 +110,12 @@
       gap: 12px;
       background: #fff;
       border-radius: 12px;
-      padding: 14px 14px;
+      padding: 14px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.06);
       transition: opacity 0.2s;
     }
 
-    .list-item.checked {
-      opacity: 0.5;
-    }
+    .list-item.checked { opacity: 0.5; }
 
     .list-item input[type="checkbox"] {
       width: 22px;
@@ -158,9 +150,7 @@
       flex-shrink: 0;
     }
 
-    .delete-btn:active {
-      color: #e53e3e;
-    }
+    .delete-btn:active { color: #e53e3e; }
 
     .clear-btn {
       display: block;
@@ -188,6 +178,20 @@
       font-size: 0.95rem;
       padding: 40px 0;
     }
+
+    .setup-notice {
+      background: #fffbeb;
+      border: 1.5px solid #f6c90e;
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 0.9rem;
+      color: #7d6608;
+      line-height: 1.7;
+    }
+
+    .setup-notice a {
+      color: #4c8bf5;
+    }
   </style>
 </head>
 <body>
@@ -198,138 +202,143 @@
       <span class="status-text" id="statusText">接続中...</span>
     </div>
 
-    <div class="input-row">
-      <input type="text" id="itemInput" placeholder="アイテムを入力..." maxlength="100">
-      <button onclick="addItem()">追加</button>
+    <div id="setupNotice" style="display:none" class="setup-notice">
+      ⚙️ <strong>Firebase の設定が必要です</strong><br>
+      <a href="https://console.firebase.google.com/" target="_blank">Firebase コンソール</a> でプロジェクトを作成し、
+      index.html の <code>firebaseConfig</code> を書き換えてください。
     </div>
 
-    <div class="summary" id="summary"></div>
+    <div id="appContent" style="display:none">
+      <div class="input-row">
+        <input type="text" id="itemInput" placeholder="アイテムを入力..." maxlength="100">
+        <button onclick="addItem()">追加</button>
+      </div>
 
-    <ul class="list" id="list"></ul>
-    <p class="empty" id="empty">リストは空です</p>
-    <button class="clear-btn" id="clearBtn" onclick="clearAll()" style="display:none">全て削除</button>
+      <div class="summary" id="summary"></div>
+      <ul class="list" id="list"></ul>
+      <p class="empty" id="empty">リストは空です</p>
+      <button class="clear-btn" id="clearBtn" onclick="clearAll()" style="display:none">全て削除</button>
+    </div>
   </div>
 
-  <script>
-    let items = [];
-    let ws;
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+    import { getDatabase, ref, onValue, push, remove, update, set }
+      from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 
-    function connect() {
-      const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-      ws = new WebSocket(`${protocol}://${location.host}`);
+    // ============================================================
+    // 【設定】Firebase コンソールの設定をここに貼り付けてください
+    //
+    // 手順:
+    //   1. https://console.firebase.google.com/ でプロジェクト作成
+    //   2. 「Realtime Database」を作成 → テストモードで開始
+    //   3. プロジェクトの設定 → マイアプリ → SDK の設定と構成
+    //      → 「構成」を選んでコピー＆ペースト
+    // ============================================================
+    const firebaseConfig = {
+      apiKey:            "YOUR_API_KEY",
+      authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
+      databaseURL:       "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+      projectId:         "YOUR_PROJECT_ID",
+      storageBucket:     "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId:             "YOUR_APP_ID"
+    };
+    // ============================================================
 
-      ws.addEventListener('open', () => {
+    if (firebaseConfig.apiKey === 'YOUR_API_KEY') {
+      document.getElementById('statusDot').className = 'status-dot disconnected';
+      document.getElementById('statusText').textContent = '未設定';
+      document.getElementById('setupNotice').style.display = 'block';
+    } else {
+      document.getElementById('appContent').style.display = 'block';
+
+      const app = initializeApp(firebaseConfig);
+      const db  = getDatabase(app);
+      const listRef = ref(db, 'items');
+
+      let items = {};
+
+      onValue(listRef, (snapshot) => {
+        items = snapshot.val() || {};
         document.getElementById('statusDot').className = 'status-dot connected';
         document.getElementById('statusText').textContent = '接続済み';
+        render();
       });
 
-      ws.addEventListener('close', () => {
-        document.getElementById('statusDot').className = 'status-dot disconnected';
-        document.getElementById('statusText').textContent = '切断 — 再接続中...';
-        setTimeout(connect, 3000);
-      });
+      function render() {
+        const list     = document.getElementById('list');
+        const empty    = document.getElementById('empty');
+        const summary  = document.getElementById('summary');
+        const clearBtn = document.getElementById('clearBtn');
 
-      ws.addEventListener('message', (e) => {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'init' || msg.type === 'update') {
-          items = msg.items;
-          render();
+        list.innerHTML = '';
+
+        const entries = Object.entries(items).map(([key, val]) => ({ key, ...val }));
+
+        if (entries.length === 0) {
+          empty.style.display = 'block';
+          clearBtn.style.display = 'none';
+          summary.textContent = '';
+          return;
         }
+
+        empty.style.display = 'none';
+        clearBtn.style.display = 'block';
+        const checked = entries.filter(e => e.checked).length;
+        summary.textContent = `${checked} / ${entries.length} 件完了`;
+
+        const sorted = [
+          ...entries.filter(e => !e.checked),
+          ...entries.filter(e => e.checked),
+        ];
+
+        sorted.forEach(({ key, name, checked }) => {
+          const li = document.createElement('li');
+          li.className = 'list-item' + (checked ? ' checked' : '');
+
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.checked = checked;
+          checkbox.addEventListener('change', () =>
+            update(ref(db, `items/${key}`), { checked: !checked })
+          );
+
+          const span = document.createElement('span');
+          span.className = 'item-name';
+          span.textContent = name;
+
+          const btn = document.createElement('button');
+          btn.className = 'delete-btn';
+          btn.textContent = '✕';
+          btn.setAttribute('aria-label', '削除');
+          btn.addEventListener('click', () => remove(ref(db, `items/${key}`)));
+
+          li.appendChild(checkbox);
+          li.appendChild(span);
+          li.appendChild(btn);
+          list.appendChild(li);
+        });
+      }
+
+      window.addItem = () => {
+        const input = document.getElementById('itemInput');
+        const name = input.value.trim();
+        if (!name) return;
+        push(listRef, { name, checked: false });
+        input.value = '';
+        input.focus();
+      };
+
+      window.clearAll = () => {
+        if (!confirm('リストを全て削除しますか？')) return;
+        set(listRef, null);
+      };
+
+      document.getElementById('itemInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') window.addItem();
       });
     }
-
-    function send() {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'update', items }));
-      }
-    }
-
-    function render() {
-      const list = document.getElementById('list');
-      const empty = document.getElementById('empty');
-      const summary = document.getElementById('summary');
-      const clearBtn = document.getElementById('clearBtn');
-
-      list.innerHTML = '';
-
-      if (items.length === 0) {
-        empty.style.display = 'block';
-        clearBtn.style.display = 'none';
-        summary.textContent = '';
-        return;
-      }
-
-      empty.style.display = 'none';
-      clearBtn.style.display = 'block';
-      const checked = items.filter(i => i.checked).length;
-      summary.textContent = `${checked} / ${items.length} 件完了`;
-
-      const sorted = [
-        ...items.map((item, index) => ({ item, index })).filter(e => !e.item.checked),
-        ...items.map((item, index) => ({ item, index })).filter(e => e.item.checked),
-      ];
-
-      sorted.forEach(({ item, index }) => {
-        const li = document.createElement('li');
-        li.className = 'list-item' + (item.checked ? ' checked' : '');
-
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = item.checked;
-        checkbox.addEventListener('change', () => toggleItem(index));
-
-        const span = document.createElement('span');
-        span.className = 'item-name';
-        span.textContent = item.name;
-
-        const btn = document.createElement('button');
-        btn.className = 'delete-btn';
-        btn.textContent = '✕';
-        btn.setAttribute('aria-label', '削除');
-        btn.addEventListener('click', () => deleteItem(index));
-
-        li.appendChild(checkbox);
-        li.appendChild(span);
-        li.appendChild(btn);
-        list.appendChild(li);
-      });
-    }
-
-    function addItem() {
-      const input = document.getElementById('itemInput');
-      const name = input.value.trim();
-      if (!name) return;
-      items.push({ name, checked: false });
-      send();
-      render();
-      input.value = '';
-      input.focus();
-    }
-
-    function toggleItem(index) {
-      items[index].checked = !items[index].checked;
-      send();
-      render();
-    }
-
-    function deleteItem(index) {
-      items.splice(index, 1);
-      send();
-      render();
-    }
-
-    function clearAll() {
-      if (!confirm('リストを全て削除しますか？')) return;
-      items = [];
-      send();
-      render();
-    }
-
-    document.getElementById('itemInput').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') addItem();
-    });
-
-    connect();
   </script>
 </body>
 </html>
